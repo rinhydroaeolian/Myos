@@ -43,53 +43,6 @@
 /* ── Forward Declarations ────────────────────────────────────── */
 extern volatile int g_shell_running;
 
-/* ── Helper: Read /proc/[pid]/stat field ─────────────────────── */
-/* 读取 /proc/[pid]/stat 中的指定字段 (空格分隔，字段 1 为 PID) */
-static int read_proc_stat_field(pid_t pid, int field_idx, char *out, int out_len) {
-    char path[64];
-    snprintf(path, sizeof(path), "/proc/%d/stat", pid);
-    FILE *f = fopen(path, "r");
-    if (!f) return -1;
-    char line[1024];
-    if (!fgets(line, sizeof(line), f)) { fclose(f); return -1; }
-    fclose(f);
-
-    /* stat 文件格式特殊: comm 字段在 () 中，需要特殊处理 */
-    /* 策略: 对于第 1 个字段之后的字段，需要跳过 (...) 的内容 */
-    char *p = line;
-    int field = 1;
-    char *field_start = p;
-
-    while (*p && field < field_idx) {
-        if (*p == '(') {
-            /* 跳过括号内的内容 (comm 字段) */
-            p++;
-            while (*p && *p != ')') p++;
-            if (*p == ')') p++;
-            field++;
-            field_start = p;
-        } else if (*p == ' ') {
-            p++;
-            field++;
-            field_start = p;
-        } else {
-            p++;
-        }
-    }
-
-    /* 提取目标字段 */
-    if (field == field_idx && field_start) {
-        char *end = field_start;
-        while (*end && *end != ' ' && *end != '\n') end++;
-        int len = end - field_start;
-        if (len >= out_len) len = out_len - 1;
-        memcpy(out, field_start, len);
-        out[len] = '\0';
-        return 0;
-    }
-    return -1;
-}
-
 /* ── Helper: Get username from UID ──────────────────────────── */
 static const char* uid_to_name(uid_t uid) {
     struct passwd *pw = getpwuid(uid);
@@ -205,7 +158,7 @@ int cmd_ps(int argc, char **argv) {
                     if (*p == ' ') field++;
                     p++;
                 }
-                snprintf(tty, sizeof(tty), "%s", p);
+                snprintf(tty, sizeof(tty), "%.15s", p);
                 /* 简化 tty 显示 */
                 if (strcmp(tty, "0") == 0 || tty[0] == '0') {
                     strcpy(tty, "?");
@@ -233,14 +186,14 @@ int cmd_ps(int argc, char **argv) {
                 char *next = p;
                 while (*next && *next != ' ') next++;
                 if (*next) { *next = '\0'; next++; }
-                strncpy(utime_str, p, sizeof(utime_str) - 1);
+                snprintf(utime_str, sizeof(utime_str), "%.31s", p);
 
                 /* stime (字段 15) */
                 p = next;
                 next = p;
                 while (*next && *next != ' ') next++;
                 if (*next) *next = '\0';
-                strncpy(stime_str, p, sizeof(stime_str) - 1);
+                snprintf(stime_str, sizeof(stime_str), "%.31s", p);
             }
             fclose(f);
         }
@@ -1143,7 +1096,10 @@ int cmd_cat(int argc, char **argv) {
         char buf[4096];
         ssize_t n;
         while ((n = read(STDIN_FILENO, buf, sizeof(buf))) > 0) {
-            write(STDOUT_FILENO, buf, n);
+            if (write(STDOUT_FILENO, buf, n) < 0) {
+                perror("cat: write");
+                break;
+            }
         }
         return 0;
     }

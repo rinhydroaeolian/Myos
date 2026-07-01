@@ -27,6 +27,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include "editor.h"
+#include <time.h>
 #include "datastruct.h"
 
 /* ── Editor State ────────────────────────────────────────────── */
@@ -77,7 +78,7 @@ static editor_t E;  /* 全局编辑器状态 */
  */
 static void die(const char *msg) {
     /* 清屏并恢复光标 */
-    write(STDOUT_FILENO, "\033[2J\033[H", 7);
+    (void)write(STDOUT_FILENO, "\033[2J\033[H", 7);
     perror(msg);
     /* 尝试恢复终端 */
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios);
@@ -139,7 +140,7 @@ static void editor_get_window_size(void) {
     struct winsize ws;
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) < 0 || ws.ws_col == 0) {
         /* 回退方法: 移动光标到右下角 */
-        write(STDOUT_FILENO, "\033[999C\033[999B", 12);
+        (void)write(STDOUT_FILENO, "\033[999C\033[999B", 12);
         /* 这里可以进一步通过 ANSI 查询，但简化处理 */
         E.screen_rows = 24;
         E.screen_cols = 80;
@@ -298,7 +299,7 @@ static void editor_draw_rows(void) {
             /* 行号 (蓝色/灰色) */
             char line_num[16];
             snprintf(line_num, sizeof(line_num), "\033[90m%4d \033[0m", file_row + 1);
-            write(STDOUT_FILENO, line_num, strlen(line_num));
+            (void)write(STDOUT_FILENO, line_num, strlen(line_num));
 
             /* 行内容 (截断到屏幕宽度) */
             int max_chars = E.screen_cols - 6;  /* 减去行号宽度 */
@@ -306,16 +307,16 @@ static void editor_draw_rows(void) {
 
             int len = line->len;
             if (len > max_chars) len = max_chars;
-            write(STDOUT_FILENO, line->text, len);
+            (void)write(STDOUT_FILENO, line->text, len);
         } else if (file_row >= E.num_lines) {
             /* 超出文件范围，显示 ~ */
             char tilde[16];
             snprintf(tilde, sizeof(tilde), "\033[90m%4s \033[0m~", "");
-            write(STDOUT_FILENO, tilde, strlen(tilde));
+            (void)write(STDOUT_FILENO, tilde, strlen(tilde));
         }
 
         /* 清除行尾并换行 */
-        write(STDOUT_FILENO, "\033[K\r\n", 5);
+        (void)write(STDOUT_FILENO, "\033[K\r\n", 5);
     }
 }
 
@@ -325,7 +326,7 @@ static void editor_draw_rows(void) {
  */
 static void editor_draw_status_bar(void) {
     /* 反色显示状态栏 */
-    write(STDOUT_FILENO, "\033[7m", 4);
+    (void)write(STDOUT_FILENO, "\033[7m", 4);
 
     char status[256];
     int len = 0;
@@ -358,24 +359,24 @@ static void editor_draw_status_bar(void) {
     }
     status[len] = '\0';
 
-    write(STDOUT_FILENO, status, len);
-    write(STDOUT_FILENO, right, rlen);
-    write(STDOUT_FILENO, "\033[0m\r\n", 6);
+    (void)write(STDOUT_FILENO, status, len);
+    (void)write(STDOUT_FILENO, right, rlen);
+    (void)write(STDOUT_FILENO, "\033[0m\r\n", 6);
 }
 
 /**
  * editor_draw_message_bar() — 绘制消息/命令行
  */
 static void editor_draw_message_bar(void) {
-    write(STDOUT_FILENO, "\033[K", 3);  /* 清除行 */
+    (void)write(STDOUT_FILENO, "\033[K", 3);  /* 清除行 */
 
     if (E.mode == MODE_COMMAND) {
         /* 显示命令行 */
-        write(STDOUT_FILENO, ":", 1);
-        write(STDOUT_FILENO, E.cmdline, E.cmdlen);
+        (void)write(STDOUT_FILENO, ":", 1);
+        (void)write(STDOUT_FILENO, E.cmdline, E.cmdlen);
     } else if (E.status_msg[0]) {
         /* 显示状态消息 (5秒后清除) */
-        write(STDOUT_FILENO, E.status_msg, strlen(E.status_msg));
+        (void)write(STDOUT_FILENO, E.status_msg, strlen(E.status_msg));
         if (time(NULL) - E.status_msg_time > 5) {
             E.status_msg[0] = '\0';
         }
@@ -399,9 +400,9 @@ static void editor_refresh_screen(void) {
 
     char buf[32];
     /* 隐藏光标 */
-    write(STDOUT_FILENO, "\033[?25l", 6);
+    (void)write(STDOUT_FILENO, "\033[?25l", 6);
     /* 定位到左上角 */
-    write(STDOUT_FILENO, "\033[H", 3);
+    (void)write(STDOUT_FILENO, "\033[H", 3);
 
     editor_draw_rows();
     editor_draw_status_bar();
@@ -414,10 +415,10 @@ static void editor_refresh_screen(void) {
     if (cursor_y < 1) cursor_y = 1;
 
     snprintf(buf, sizeof(buf), "\033[%d;%dH", cursor_y, cursor_x);
-    write(STDOUT_FILENO, buf, strlen(buf));
+    (void)write(STDOUT_FILENO, buf, strlen(buf));
 
     /* 显示光标 */
-    write(STDOUT_FILENO, "\033[?25h", 6);
+    (void)write(STDOUT_FILENO, "\033[?25h", 6);
 }
 
 /* ── Insert Operations ──────────────────────────────────────── */
@@ -859,7 +860,7 @@ static void editor_init(const char *filename) {
  */
 int editor_run(const char *filename) {
     /* 清屏并进入 */
-    write(STDOUT_FILENO, "\033[2J\033[H", 7);
+    (void)write(STDOUT_FILENO, "\033[2J\033[H", 7);
     printf("myOS Editor v1.0 — vi-like full-screen editor\r\n");
     printf("Loading...\r\n");
 
@@ -882,7 +883,7 @@ int editor_run(const char *filename) {
 
     /* 恢复终端 */
     editor_disable_raw_mode();
-    write(STDOUT_FILENO, "\033[2J\033[H", 7);
+    (void)write(STDOUT_FILENO, "\033[2J\033[H", 7);
 
     printf("Editor closed.\n");
     if (E.modified) {
