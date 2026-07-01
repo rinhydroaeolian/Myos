@@ -110,9 +110,21 @@ static void* kbd_thread_func(void *arg) {
         pthread_mutex_unlock(&kbd_mutex);
         if (!running) break;
 
+        /* 按需打开 FIFO 写端（阻塞直到读者连接） */
+        if (kbd_fifo_fd < 0) {
+            printf("[kbd] Waiting for reader on %s ...\n", KBD_FIFO_PATH);
+            kbd_fifo_fd = open(KBD_FIFO_PATH, O_WRONLY);
+            if (kbd_fifo_fd < 0) {
+                /* 被停止信号中断或 FIFO 被删除 */
+                usleep(500 * 1000);
+                continue;
+            }
+            printf("[kbd] Reader connected, generating events.\n");
+        }
+
         /* 随机睡眠 1-5 秒 */
-        int sleep_ms = 1000 + (rand() % 4000);  /* 1000-4999 ms */
-        usleep(sleep_ms * 1000);  /* usleep 接受微秒 */
+        int sleep_ms = 1000 + (rand() % 4000);
+        usleep(sleep_ms * 1000);
 
         /* 再次检查退出标志 */
         pthread_mutex_lock(&kbd_mutex);
@@ -123,24 +135,27 @@ static void* kbd_thread_func(void *arg) {
         const char *key = kbd_get_random_key();
 
         /* 将事件写入 FIFO */
-        if (kbd_fifo_fd >= 0) {
-            char event[64];
-            /* 格式: 时间戳 按键名 */
-            time_t now = time(NULL);
-            struct tm *tm_now = localtime(&now);
-            char timestamp[16];
-            strftime(timestamp, sizeof(timestamp), "%H:%M:%S", tm_now);
-            int len = snprintf(event, sizeof(event), "[%s] Key: %s\n", timestamp, key);
+        char event[64];
+        time_t now = time(NULL);
+        struct tm *tm_now = localtime(&now);
+        char timestamp[16];
+        strftime(timestamp, sizeof(timestamp), "%H:%M:%S", tm_now);
+        int len = snprintf(event, sizeof(event), "[%s] Key: %s\n", timestamp, key);
 
-            /* 非阻塞写入 FIFO */
-            ssize_t written = write(kbd_fifo_fd, event, len);
-            if (written < 0) {
-                /* FIFO 可能满或读端未打开 — 忽略错误 */
-            }
+        ssize_t written = write(kbd_fifo_fd, event, len);
+        if (written < 0) {
+            /* 读者断开连接 — 关闭并等待下次连接 */
+            close(kbd_fifo_fd);
+            kbd_fifo_fd = -1;
         }
         pthread_mutex_unlock(&kbd_mutex);
     }
 
+    /* 清理 */
+    if (kbd_fifo_fd >= 0) {
+        close(kbd_fifo_fd);
+        kbd_fifo_fd = -1;
+    }
     printf("[kbd] Virtual keyboard driver stopped.\n");
     return NULL;
 }
@@ -176,22 +191,12 @@ int kbd_start(void) {
         return -1;
     }
 
-    /* 打开 FIFO 写端 (非阻塞，防止读端未打开时阻塞线程) */
-    kbd_fifo_fd = open(KBD_FIFO_PATH, O_WRONLY | O_NONBLOCK);
-    if (kbd_fifo_fd < 0) {
-        fprintf(stderr, "[kbd] Failed to open FIFO for writing: %s\n", strerror(errno));
-        unlink(KBD_FIFO_PATH);
-        pthread_mutex_unlock(&kbd_mutex);
-        return -1;
-    }
-
-    /* 启动后台线程 */
+    /* 启动后台线程（FIFO 写端由线程按需打开，避免 O_NONBLOCK + O_WRONLY 的 ENXIO） */
+    kbd_fifo_fd = -1;
     kbd_running = 1;
     if (pthread_create(&kbd_thread, NULL, kbd_thread_func, NULL) != 0) {
         fprintf(stderr, "[kbd] Failed to create driver thread.\n");
         kbd_running = 0;
-        close(kbd_fifo_fd);
-        kbd_fifo_fd = -1;
         unlink(KBD_FIFO_PATH);
         pthread_mutex_unlock(&kbd_mutex);
         return -1;
