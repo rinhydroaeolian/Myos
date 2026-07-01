@@ -257,6 +257,7 @@ static int editor_save_file(void) {
     if (!f) {
         snprintf(E.status_msg, sizeof(E.status_msg),
                  "Cannot save: %s", strerror(errno));
+        E.status_msg_time = time(NULL);
         return -1;
     }
 
@@ -269,6 +270,7 @@ static int editor_save_file(void) {
     E.modified = 0;
     snprintf(E.status_msg, sizeof(E.status_msg),
              "\"%s\" %d lines written", E.filename, E.num_lines);
+    E.status_msg_time = time(NULL);
     return 0;
 }
 
@@ -598,6 +600,7 @@ static int editor_execute_command(void) {
         /* :wq — 保存并退出 */
         if (!E.filename[0]) {
             snprintf(E.status_msg, sizeof(E.status_msg), "No filename");
+            E.status_msg_time = time(NULL);
             return 0;
         }
         editor_save_file();
@@ -610,6 +613,7 @@ static int editor_execute_command(void) {
         if (E.modified) {
             snprintf(E.status_msg, sizeof(E.status_msg),
                      "No write since last change (use :q! to override)");
+            E.status_msg_time = time(NULL);
             return 0;
         }
         return 1;
@@ -623,12 +627,14 @@ static int editor_execute_command(void) {
         if (!E.filename[0]) {
             snprintf(E.status_msg, sizeof(E.status_msg),
                      "No filename (use :w <filename>)");
+            E.status_msg_time = time(NULL);
             return 0;
         }
         editor_save_file();
     } else {
         snprintf(E.status_msg, sizeof(E.status_msg),
                  "Unknown command: %s", cmd);
+        E.status_msg_time = time(NULL);
     }
 
     return 0;
@@ -648,7 +654,16 @@ static int editor_process_keypress(void) {
         switch (key) {
             case '\r':  /* Enter */
             case '\n':
-                return editor_execute_command();
+                {
+                    int result = editor_execute_command();
+                    /* 清空命令行；失败时回到 NORMAL 模式以显示错误消息 */
+                    E.cmdlen = 0;
+                    E.cmdline[0] = '\0';
+                    if (!result) {
+                        E.mode = MODE_NORMAL;
+                    }
+                    return result;
+                }
             case '\033':  /* ESC — 取消命令 */
                 E.mode = MODE_NORMAL;
                 E.cmdlen = 0;
