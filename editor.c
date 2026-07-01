@@ -603,8 +603,11 @@ static int editor_execute_command(void) {
             E.status_msg_time = time(NULL);
             return 0;
         }
-        editor_save_file();
-        return 1;
+        /* 保存成功才退出，失败则留在编辑器 */
+        if (editor_save_file() == 0) {
+            return 1;
+        }
+        return 0;
     } else if (cmd[0] == 'q' && cmd[1] == '!') {
         /* :q! — 强制退出 */
         return 1;
@@ -874,10 +877,11 @@ static void editor_init(const char *filename) {
  *   5. 退出时恢复终端
  */
 int editor_run(const char *filename) {
-    /* 清屏并进入 */
+    /* 使用 write() + 显式 \r\n，不依赖终端 OPOST 标志 */
     (void)write(STDOUT_FILENO, "\033[2J\033[H", 7);
-    printf("myOS Editor v1.0 — vi-like full-screen editor\r\n");
-    printf("Loading...\r\n");
+    (void)write(STDOUT_FILENO, "myOS Editor v1.0 — vi-like full-screen editor\r\n",
+                strlen("myOS Editor v1.0 — vi-like full-screen editor\r\n"));
+    (void)write(STDOUT_FILENO, "Loading...\r\n", strlen("Loading...\r\n"));
 
     /* 初始化终端 */
     editor_enable_raw_mode();
@@ -896,13 +900,14 @@ int editor_run(const char *filename) {
         quit = editor_process_keypress();
     }
 
-    /* 恢复终端 */
+    /* 恢复终端 — 之后全部用 write() + 显式 \r\n，避免依赖 OPOST */
     editor_disable_raw_mode();
     (void)write(STDOUT_FILENO, "\033[2J\033[H", 7);
-
-    printf("Editor closed.\n");
+    (void)write(STDOUT_FILENO, "Editor closed.\r\n", strlen("Editor closed.\r\n"));
     if (E.modified) {
-        printf("Warning: unsaved changes were lost.\n");
+        (void)write(STDOUT_FILENO,
+                    "Warning: unsaved changes were lost.\r\n",
+                    strlen("Warning: unsaved changes were lost.\r\n"));
     }
 
     /* 清理 */
