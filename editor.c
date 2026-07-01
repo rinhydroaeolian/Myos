@@ -126,17 +126,19 @@ static void editor_enable_raw_mode(void) {
 
 /**
  * editor_disable_raw_mode() — 恢复终端到原始设置
- * WSL 环境下 tcsetattr 不一定可靠还原所有标志，故显式强制执行。
+ * WSL 下 tcsetattr 不一定可靠还原所有标志，故显式强制逐位恢复。
  */
 static void editor_disable_raw_mode(void) {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios);
-    /* 保险：显式恢复在 raw mode 中被清除的关键标志 */
+    /* 保险：显式恢复 raw mode 中清除/修改的全部标志 */
     struct termios t;
     if (tcgetattr(STDIN_FILENO, &t) == 0) {
-        t.c_oflag |= OPOST;             /* \n → \r\n 输出转换      */
-        t.c_lflag |= (ECHO | ICANON | ISIG); /* 回显、规范模式、信号 */
-        t.c_cc[VMIN]  = 1;              /* 规范模式下至少读 1 字节   */
-        t.c_cc[VTIME] = 0;              /* 无超时，阻塞等待         */
+        t.c_iflag |= (ICRNL | IXON);        /* \r→\n + 流控         */
+        t.c_oflag |= (OPOST | ONLCR);        /* 输出处理 + NL→CR-NL   */
+        t.c_lflag |= (ECHO | ECHOE | ECHOK | ECHONL   /* 回显全家桶   */
+                      | ICANON | ISIG | IEXTEN);       /* 规范+信号+扩展 */
+        t.c_cc[VMIN]  = 1;                  /* 阻塞读，至少 1 字节     */
+        t.c_cc[VTIME] = 0;                  /* 无超时                 */
         tcsetattr(STDIN_FILENO, TCSANOW, &t);
     }
 }
@@ -910,9 +912,10 @@ int editor_run(const char *filename) {
         quit = editor_process_keypress();
     }
 
-    /* 恢复终端 — 之后全部用 write() + 显式 \r\n，避免依赖 OPOST */
+    /* 恢复终端 — 先重置 ANSI 状态再清屏（防 WSL 终端残留状态） */
     editor_disable_raw_mode();
-    (void)write(STDOUT_FILENO, "\033[2J\033[H", 7);
+    /* \033[0m 重置属性  \033[r 重置滚动区  \033[2J 清屏  \033[H 光标归位 */
+    (void)write(STDOUT_FILENO, "\033[0m\033[r\033[2J\033[H", 14);
     (void)write(STDOUT_FILENO, "Editor closed.\r\n", strlen("Editor closed.\r\n"));
     if (E.modified) {
         (void)write(STDOUT_FILENO,
