@@ -248,7 +248,7 @@ void reap_children(void) {
         if (j) {
             /* 后台作业完成，打印提示 */
             fprintf(stderr, "\n[%d]  Done    %s\n", j->job_id, j->command);
-            remove_job(&job_list, pid);
+            remove_job(pid);
         }
         /* 从进程表中移除 */
         pcb_remove(&process_table, pid);

@@ -474,7 +474,8 @@ int cmd_ps_aux(int argc, char **argv) {
 
         /* 解析 stat 文件 */
         char *p = line;
-        while (*p && *p != ' ') p++; p++;  /* skip pid */
+        while (*p && *p != ' ') p++;  /* skip pid */
+        while (*p == ' ') p++;
         /* comm */
         if (*p == '(') {
             p++;
@@ -493,19 +494,36 @@ int cmd_ps_aux(int argc, char **argv) {
         while (*p == ' ') p++;
 
         /* ppid — skip */
-        while (*p && *p != ' ') p++; while (*p == ' ') p++;
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
         /* pgrp — skip */
-        while (*p && *p != ' ') p++; while (*p == ' ') p++;
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
         /* session — skip */
-        while (*p && *p != ' ') p++; while (*p == ' ') p++;
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
         /* tty_nr */
-        int tty_nr = atoi(p); while (*p && *p != ' ') p++; while (*p == ' ') p++;
-        /* tpgid — skip */ while (*p && *p != ' ') p++; while (*p == ' ') p++;
-        /* flags — skip */ while (*p && *p != ' ') p++; while (*p == ' ') p++;
-        /* minflt — skip */ while (*p && *p != ' ') p++; while (*p == ' ') p++;
-        /* cminflt — skip */ while (*p && *p != ' ') p++; while (*p == ' ') p++;
-        /* majflt — skip */ while (*p && *p != ' ') p++; while (*p == ' ') p++;
-        /* cmajflt — skip */ while (*p && *p != ' ') p++; while (*p == ' ') p++;
+        int tty_nr = atoi(p);
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
+        /* tpgid — skip */
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
+        /* flags — skip */
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
+        /* minflt — skip */
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
+        /* cminflt — skip */
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
+        /* majflt — skip */
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
+        /* cmajflt — skip */
+        while (*p && *p != ' ') p++;
+        while (*p == ' ') p++;
 
         /* utime (14) */
         ai->utime = strtoul(p, &p, 10); while (*p == ' ') p++;
