@@ -126,14 +126,17 @@ static void editor_enable_raw_mode(void) {
 
 /**
  * editor_disable_raw_mode() — 恢复终端到原始设置
- * 显式确保 OPOST 置位，WSL 环境下 tcsetattr 不一定可靠还原此标志。
+ * WSL 环境下 tcsetattr 不一定可靠还原所有标志，故显式强制执行。
  */
 static void editor_disable_raw_mode(void) {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios);
-    /* 保险：显式打开输出处理，确保 \n → \r\n 转换 */
+    /* 保险：显式恢复在 raw mode 中被清除的关键标志 */
     struct termios t;
     if (tcgetattr(STDIN_FILENO, &t) == 0) {
-        t.c_oflag |= OPOST;
+        t.c_oflag |= OPOST;             /* \n → \r\n 输出转换      */
+        t.c_lflag |= (ECHO | ICANON | ISIG); /* 回显、规范模式、信号 */
+        t.c_cc[VMIN]  = 1;              /* 规范模式下至少读 1 字节   */
+        t.c_cc[VTIME] = 0;              /* 无超时，阻塞等待         */
         tcsetattr(STDIN_FILENO, TCSANOW, &t);
     }
 }
