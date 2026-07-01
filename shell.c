@@ -452,8 +452,8 @@ void shell_run(void) {
         /* 读取用户输入 */
         line = read_input();
         if (!line) {
-            /* EOF (Ctrl+D) — 退出 Shell */
-            printf("\n");
+            /* EOF (Ctrl+D) — 退出 Shell，显式 \r\n 不依赖 OPOST */
+            (void)write(STDOUT_FILENO, "\r\n", 2);
             break;
         }
 

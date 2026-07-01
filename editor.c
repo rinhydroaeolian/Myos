@@ -126,9 +126,16 @@ static void editor_enable_raw_mode(void) {
 
 /**
  * editor_disable_raw_mode() — 恢复终端到原始设置
+ * 显式确保 OPOST 置位，WSL 环境下 tcsetattr 不一定可靠还原此标志。
  */
 static void editor_disable_raw_mode(void) {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios);
+    /* 保险：显式打开输出处理，确保 \n → \r\n 转换 */
+    struct termios t;
+    if (tcgetattr(STDIN_FILENO, &t) == 0) {
+        t.c_oflag |= OPOST;
+        tcsetattr(STDIN_FILENO, TCSANOW, &t);
+    }
 }
 
 /**

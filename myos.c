@@ -161,6 +161,6 @@ int main(void) {
     /* 确保虚拟键盘驱动已停止 */
     kbd_stop();
 
-    printf("Goodbye!\n");
+    (void)write(STDOUT_FILENO, "Goodbye!\r\n", 10);
     return 0;
 }
