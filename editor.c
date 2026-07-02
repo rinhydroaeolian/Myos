@@ -59,6 +59,9 @@ typedef struct {
     /* 模式 */
     editor_mode_t mode;           /* 当前模式 */
 
+    /* 多键命令状态 (如 dd, gg) */
+    int pending_key;              /* 等待第二个按键完成组合命令, 0 表示无 */
+
     /* 命令行缓冲区 */
     char cmdline[256];            /* : 命令的输入缓冲区 */
     int cmdlen;                   /* 命令缓冲区长度 */
@@ -701,6 +704,11 @@ static int editor_process_keypress(void) {
 
     /* ── NORMAL 模式 ────────────────────────────────────────── */
     if (E.mode == MODE_NORMAL) {
+        /* 如果等待组合键 (dd/gg) 的第二个按键，但按键不匹配，清除等待 */
+        if (E.pending_key != 0 && key != E.pending_key) {
+            E.pending_key = 0;
+        }
+
         switch (key) {
             case 'h': case 1003:  /* 左 */
                 if (E.cx > 0) E.cx--;
@@ -749,7 +757,14 @@ static int editor_process_keypress(void) {
                 }
                 break;
             case 'g':  /* gg — 文件开头 (需要连按两次 g) */
-                /* 简化: 单次 g 不移动 */
+                if (E.pending_key == 'g') {
+                    /* 第二个 g: 跳转到文件开头 */
+                    E.cy = 0;
+                    E.cx = 0;
+                    E.pending_key = 0;
+                } else {
+                    E.pending_key = 'g';
+                }
                 break;
             case 'G':  /* 文件末尾 */
                 E.cy = E.num_lines > 0 ? E.num_lines - 1 : 0;
@@ -759,7 +774,35 @@ static int editor_process_keypress(void) {
                 editor_delete_char();
                 break;
             case 'd':  /* dd — 删除行 (需要连按两次 d) */
-                /* 简化: 单次 d 不执行 */
+                if (E.pending_key == 'd') {
+                    /* 第二个 d: 删除当前行 */
+                    line_node_t *cur = editor_get_line(E.cy);
+                    if (cur && E.num_lines > 1) {
+                        line_node_t *next_line = editor_delete_line(cur);
+                        /* 调整光标: 如果删除的是最后一行, 上移一行 */
+                        if (!next_line) {
+                            E.cy = E.num_lines - 1;
+                        } else if (E.cy >= E.num_lines) {
+                            E.cy = E.num_lines - 1;
+                        }
+                        E.cx = 0;
+                        /* 如果文件变空了, 插入一个空行 */
+                        if (E.num_lines == 0) {
+                            editor_insert_line(NULL, "", 0);
+                            E.modified = 1;  /* 删除后重建空行也算修改 */
+                        }
+                    } else if (cur && E.num_lines == 1) {
+                        /* 只有一行: 清空该行内容 */
+                        free(cur->text);
+                        cur->text = strdup("");
+                        cur->len = 0;
+                        E.cx = 0;
+                        E.modified = 1;
+                    }
+                    E.pending_key = 0;
+                } else {
+                    E.pending_key = 'd';
+                }
                 break;
             case 'i':  /* 进入插入模式 (光标前) */
                 E.mode = MODE_INSERT;
@@ -864,6 +907,7 @@ static void editor_init(const char *filename) {
     E.mode = MODE_NORMAL;
     E.screen_rows = 24;
     E.screen_cols = 80;
+    E.pending_key = 0;
 
     if (filename) {
         strncpy(E.filename, filename, sizeof(E.filename) - 1);
