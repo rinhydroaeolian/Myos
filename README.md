@@ -5,7 +5,7 @@
 ## 项目架构
 
 ```
-Myos/
+shell/
 ├── myos.c          # 主入口 + Shell 主循环
 ├── shell.c         # Shell 命令解析器 & 调度器
 ├── shell.h         # Shell 接口声明
@@ -34,7 +34,7 @@ Myos/
 
 ### 编译
 ```bash
-cd Myos
+cd shell
 make
 ```
 

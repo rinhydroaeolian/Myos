@@ -33,8 +33,10 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/select.h>
 #include <errno.h>
 #include <time.h>
+#include <signal.h>
 #include "keyboard.h"
 #include "datastruct.h"
 
@@ -98,6 +100,9 @@ static const char* kbd_get_random_key(void) {
 static void* kbd_thread_func(void *arg) {
     (void)arg;
     srand((unsigned int)time(NULL) ^ (unsigned int)pthread_self());
+
+    /* 忽略 SIGPIPE：当读者断开连接时 write() 返回 EPIPE 而不是终止进程 */
+    signal(SIGPIPE, SIG_IGN);
 
     printf("[kbd] Virtual keyboard driver started.\n");
     printf("[kbd] Events are written to %s\n", KBD_FIFO_PATH);
@@ -215,7 +220,9 @@ int kbd_start(void) {
  * 从 FIFO 读取并显示所有待处理的按键事件。
  *
  * 读取原理: 模拟操作系统从键盘缓冲区读取数据。
- *   以非阻塞模式打开 FIFO 读端，读取并显示所有可用数据。
+ *   1. 以阻塞模式打开 FIFO 读端 — 等待与写端 (kbd 线程) 建立连接
+ *   2. 使用 select() 等待数据到达，超时 5 秒
+ *   3. 读取并显示所有可用的事件
  *
  * 返回: 0 成功 (可能无数据), -1 驱动未运行或 FIFO 不存在
  */
@@ -229,8 +236,8 @@ int kbd_read(void) {
         return -1;
     }
 
-    /* 以非阻塞模式打开 FIFO 读端 */
-    int read_fd = open(KBD_FIFO_PATH, O_RDONLY | O_NONBLOCK);
+    /* 以阻塞模式打开 FIFO 读端 — 与写端建立连接 (rendezvous) */
+    int read_fd = open(KBD_FIFO_PATH, O_RDONLY);
     if (read_fd < 0) {
         fprintf(stderr, "[kbd] Cannot read events: %s\n", strerror(errno));
         return -1;
@@ -238,18 +245,37 @@ int kbd_read(void) {
 
     printf("┌─ Virtual Keyboard Events ─────────────────────────────┐\n");
 
-    char buf[4096];
-    ssize_t n = read(read_fd, buf, sizeof(buf) - 1);
-    if (n > 0) {
-        buf[n] = '\0';
-        /* 逐行打印事件 */
-        char *line = strtok(buf, "\n");
-        while (line) {
-            printf("│ %-54s │\n", line);
-            line = strtok(NULL, "\n");
+    /* 使用 select() 等待数据到达，超时 5 秒 */
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(read_fd, &readfds);
+    struct timeval tv;
+    tv.tv_sec = 5;
+    tv.tv_usec = 0;
+
+    int sel_ret = select(read_fd + 1, &readfds, NULL, NULL, &tv);
+
+    if (sel_ret > 0 && FD_ISSET(read_fd, &readfds)) {
+        /* 有数据可读 — 尽可能读取所有可用事件 */
+        char buf[4096];
+        ssize_t n = read(read_fd, buf, sizeof(buf) - 1);
+        if (n > 0) {
+            buf[n] = '\0';
+            /* 逐行打印事件 */
+            char *line = strtok(buf, "\n");
+            while (line) {
+                printf("│ %-54s │\n", line);
+                line = strtok(NULL, "\n");
+            }
+        } else {
+            printf("│ %-54s │\n", "No new events in buffer.");
         }
-    } else {
+    } else if (sel_ret == 0) {
+        /* 超时: 连接已建立但 5 秒内无事件到达 */
         printf("│ %-54s │\n", "No new events in buffer.");
+    } else {
+        /* select() 出错 (如 FIFO 被 stopkbd 删除) */
+        printf("│ %-54s │\n", "Connection interrupted.");
     }
 
     printf("└──────────────────────────────────────────────────────┘\n");

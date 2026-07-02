@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <signal.h>
 #include "shell.h"
 #include "commands.h"
 #include "process.h"
@@ -141,6 +142,9 @@ static void register_all_commands(void) {
  * 4. 退出前清理资源
  */
 int main(void) {
+    /* 忽略 SIGPIPE：防止向无读者的 FIFO 写入时进程被终止 */
+    signal(SIGPIPE, SIG_IGN);
+
     /* 第一步: 初始化进程管理器 (信号处理器 + 进程表) */
     init_process_manager();
 
