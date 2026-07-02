@@ -34,7 +34,7 @@ shell/
 
 ### 编译
 ```bash
-cd shell
+cd Myos
 make
 ```
 
