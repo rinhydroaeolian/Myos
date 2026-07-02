@@ -5,7 +5,7 @@
 ## 项目架构
 
 ```
-shell/
+Myos/
 ├── myos.c          # 主入口 + Shell 主循环
 ├── shell.c         # Shell 命令解析器 & 调度器
 ├── shell.h         # Shell 接口声明
